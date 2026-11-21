@@ -1,0 +1,146 @@
+x-litellm-database-environment: &litellm-database-environment
+  DATABASE_URL: postgresql://litellm:${LITELLM_DB_PASSWORD:?Run llmops/stack.sh init}@postgres:5432/litellm
+  LITELLM_SALT_KEY: ${LITELLM_SALT_KEY:?Run llmops/stack.sh init}
+
+services:
+  litellm:
+    image: ${LITELLM_IMAGE:?Load images.lock.env}
+    restart: unless-stopped
+    user: "65532:65532"
+    command: ["--config", "/etc/sovereignai/litellm.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    environment:
+      <<: *litellm-database-environment
+      DISABLE_SCHEMA_UPDATE: "true"
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:?Run llmops/stack.sh init}
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      LITELLM_TELEMETRY: "False"
+      DO_NOT_TRACK: "1"
+      NO_PROXY: "localhost,127.0.0.1,inference,postgres"
+    ports:
+      - "127.0.0.1:${LITELLM_PORT:-4000}:4000"
+    volumes:
+      - ../../llmops/routing/litellm/config.yaml:/etc/sovereignai/litellm.yaml:ro
+      - ../../llmops/scripts/smoke.py:/etc/sovereignai/smoke.py:ro
+    networks:
+      - gateway
+      - inference
+      - database
+    depends_on:
+      inference:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      litellm-migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/opt/litellm/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4000/health/readiness', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  postgres:
+    image: ${POSTGRES_IMAGE:?Load images.lock.env}
+    restart: unless-stopped
+    user: "70:70"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: litellm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run llmops/stack.sh init}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks: [database]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "litellm"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: 30s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${POSTGRES_MEMORY:-1g}
+    cpus: 2
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  postgres-init:
+    image: ${POSTGRES_IMAGE:?Load images.lock.env}
+    restart: "no"
+    user: "70:70"
+    entrypoint: ["/bin/sh", "/etc/sovereignai/postgres-init.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: postgres
+      PGDATABASE: litellm
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Run llmops/stack.sh init}
+      LITELLM_DB_PASSWORD: ${LITELLM_DB_PASSWORD:?Run llmops/stack.sh init}
+    volumes:
+      - ../../llmops/routing/litellm/postgres-init.sh:/etc/sovereignai/postgres-init.sh:ro
+    networks: [database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    pids_limit: 64
+
+  litellm-migrate:
+    image: ${LITELLM_IMAGE:?Load images.lock.env}
+    restart: "no"
+    user: "65532:65532"
+    entrypoint: ["/usr/bin/litellm"]
+    command: ["--skip_server_startup"]
+    environment:
+      <<: *litellm-database-environment
+      DISABLE_SCHEMA_UPDATE: "false"
+      LITELLM_LOCAL_MODEL_COST_MAP: "True"
+      LITELLM_TELEMETRY: "False"
+    networks: [database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 2g
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+  inference:
+    restart: unless-stopped
+    user: "65532:65532"
+    networks:
+      - inference
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 1024
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+
+networks:
+  gateway: {}
+  inference:
+    internal: true
+  database:
+    internal: true
+
+volumes:
+  postgres-data: {}

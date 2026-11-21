@@ -1,0 +1,27 @@
+services:
+  litellm:
+    environment:
+      INFERENCE_MODEL: ollama_chat/${OLLAMA_MODEL:-qwen2.5:0.5b}
+      INFERENCE_API_BASE: http://inference:11434
+      INFERENCE_API_KEY: unused-local-ollama
+  inference:
+    image: ${OLLAMA_IMAGE:?Load images.lock.env}
+    command: [serve]
+    environment:
+      HOME: /home/ollama
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5:0.5b}
+    volumes:
+      - ollama-data:/home/ollama
+    healthcheck:
+      test: ["CMD", "/usr/bin/ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    mem_limit: ${OLLAMA_MEMORY:-4g}
+    cpus: 4
+
+volumes:
+  ollama-data: {}
