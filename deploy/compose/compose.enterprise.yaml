@@ -1,0 +1,53 @@
+services:
+  litellm:
+    environment:
+      INFERENCE_MODEL: openai/${VLLM_SERVED_MODEL_NAME:-local-model}
+      INFERENCE_API_BASE: http://inference:8000/v1
+      INFERENCE_API_KEY: ${VLLM_API_KEY:?Run llmops/stack.sh init}
+  inference:
+    image: ${VLLM_IMAGE:?Load images.lock.env}
+    command:
+      - ${VLLM_MODEL:-Qwen/Qwen2.5-0.5B-Instruct}
+      - --revision
+      - ${VLLM_MODEL_REVISION:-main}
+      - --served-model-name
+      - ${VLLM_SERVED_MODEL_NAME:-local-model}
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --max-model-len
+      - ${VLLM_MAX_MODEL_LEN:-4096}
+      - --tensor-parallel-size
+      - ${VLLM_TENSOR_PARALLEL_SIZE:-1}
+      - --gpu-memory-utilization
+      - ${VLLM_GPU_MEMORY_UTILIZATION:-0.80}
+      - --disable-log-requests
+    environment:
+      VLLM_API_KEY: ${VLLM_API_KEY:?Run llmops/stack.sh init}
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      VLLM_NO_USAGE_STATS: "1"
+      HF_HUB_DISABLE_TELEMETRY: "1"
+      DO_NOT_TRACK: "1"
+    volumes:
+      - vllm-cache:/home/nonroot/.cache
+    shm_size: ${VLLM_SHM_SIZE:-2gb}
+    mem_limit: ${VLLM_MEMORY:-16g}
+    healthcheck:
+      test: ["CMD", "/opt/venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 600s
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${VLLM_GPU_COUNT:-1}
+              capabilities: [gpu]
+
+volumes:
+  vllm-cache: {}

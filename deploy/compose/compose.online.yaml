@@ -1,0 +1,10 @@
+# Opt-in provisioning egress for inference only. Remove after model provisioning.
+services:
+  inference:
+    environment:
+      HF_HUB_OFFLINE: "0"
+      TRANSFORMERS_OFFLINE: "0"
+    networks:
+      - provisioning
+networks:
+  provisioning: {}

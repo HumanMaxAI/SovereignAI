@@ -1,0 +1,18 @@
+# Provider-specific values are supplied by the selected Compose overlay.
+# https://docs.litellm.ai/docs/proxy/configs
+model_list:
+  - model_name: sovereign-chat
+    litellm_params:
+      model: os.environ/INFERENCE_MODEL
+      api_base: os.environ/INFERENCE_API_BASE
+      api_key: os.environ/INFERENCE_API_KEY
+litellm_settings:
+  telemetry: false
+  set_verbose: false
+  turn_off_message_logging: true
+  request_timeout: 300
+general_settings:
+  database_url: os.environ/DATABASE_URL
+  master_key: os.environ/LITELLM_MASTER_KEY
+  allow_requests_on_db_unavailable: false
+  store_prompts_in_spend_logs: false
